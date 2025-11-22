@@ -1,6 +1,5 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs/promises';
-import path from 'path';
 import { getSearchConfig } from './search-config.js';
 import { extractDetailsForCars } from './extract-details.js';
 
@@ -175,89 +174,9 @@ async function extractCarsFromAutotrader() {
     // Close the initial page as we'll use a new one for detail extraction
     await page.close();
 
-    // Load existing extracted cars if available
-    const outputPath = path.join(process.cwd(), 'extracted-cars.json');
-    let existingCars = [];
-    let existingCarsMap = new Map();
-    
-    try {
-      const existingData = await fs.readFile(outputPath, 'utf-8');
-      existingCars = JSON.parse(existingData);
-      console.log(`\n📂 Loaded ${existingCars.length} existing cars from ${outputPath}`);
-      
-      // Create a map of existing cars by ID for quick lookup
-      existingCars.forEach(car => {
-        const carId = car.id || car.carId;
-        if (carId) {
-          existingCarsMap.set(carId, car);
-        }
-      });
-    } catch (error) {
-      if (error.code !== 'ENOENT') {
-        console.log(`\n⚠️  Could not read existing file: ${error.message}`);
-      } else {
-        console.log('\n📂 No existing data file found, will create new one');
-      }
-    }
-
-    // Separate cars into those that need detail extraction and those that don't
-    const carsToExtract = [];
-    const carsWithDetails = [];
-    
-    cars.forEach(car => {
-      const carId = car.id || car.carId;
-      const existingCar = existingCarsMap.get(carId);
-      
-      // Check if car already has detailed information
-      // A car has details if it has images array, description, or seller info
-      if (existingCar && (
-        (existingCar.images && existingCar.images.length > 0) ||
-        existingCar.description ||
-        existingCar.sellerName ||
-        existingCar.engine
-      )) {
-        // Car already has details, use existing data but update basic info
-        carsWithDetails.push({
-          ...existingCar,
-          ...car, // Update with any new basic info from listing
-          // Preserve detailed fields from existing data
-          images: existingCar.images || car.images,
-          description: existingCar.description,
-          sellerName: existingCar.sellerName,
-          sellerLocation: existingCar.sellerLocation,
-          contactLocation: existingCar.contactLocation,
-          phoneNumber: existingCar.phoneNumber,
-          engine: existingCar.engine,
-          fuelType: existingCar.fuelType,
-          gearbox: existingCar.gearbox,
-          doors: existingCar.doors,
-          seats: existingCar.seats,
-          emissionClass: existingCar.emissionClass,
-          bodyColour: existingCar.bodyColour,
-          registration: existingCar.registration
-        });
-      } else {
-        // Car needs detail extraction
-        carsToExtract.push(car);
-      }
-    });
-
-    console.log(`\n📊 Summary:`);
-    console.log(`   - Total cars found: ${cars.length}`);
-    console.log(`   - Already have details: ${carsWithDetails.length}`);
-    console.log(`   - Need detail extraction: ${carsToExtract.length}`);
-
-    // Extract detailed information only for cars that need it
-    let newlyExtractedCars = [];
-    if (carsToExtract.length > 0) {
-      console.log('\n📋 Extracting detailed information for new cars...');
-      newlyExtractedCars = await extractDetailsForCars(browser, carsToExtract);
-    } else {
-      console.log('\n✅ All cars already have detailed information!');
-    }
-
-    // Combine all cars: existing with details + newly extracted
-    const detailedCars = [...carsWithDetails, ...newlyExtractedCars];
+    // Extract detailed information for all cars
+    console.log(`\n📋 Extracting detailed information for ${cars.length} car(s)...`);
+    const detailedCars = await extractDetailsForCars(browser, cars);
 
     // Log the first few cars for debugging
     console.log('\n✅ Detailed extraction complete!');
@@ -276,9 +195,7 @@ async function extractCarsFromAutotrader() {
       console.log(`   Link: ${car.link || car.url || 'N/A'}`);
     });
     
-    // Save extracted data to file for inspection
-    await fs.writeFile(outputPath, JSON.stringify(detailedCars, null, 2));
-    console.log(`\n💾 Saved ${detailedCars.length} detailed listings to ${outputPath}`);
+
 
     return detailedCars;
 

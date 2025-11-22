@@ -1,5 +1,5 @@
 import { extractCarsFromAutotrader } from './extract.js';
-import { postCarsToDiscord, sendSummaryMessage } from './discord-poster.js';
+import { postCarsToDiscord, sendSummaryMessage, updateChannelTopic } from './discord-poster.js';
 import { loadBotConfig, getAllSearchConfigs } from './search-config.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -339,11 +339,34 @@ async function pollForNewCars() {
     
     console.log('\n✅ All searches completed!');
     
-    // Send summary message to Discord (without notifications)
-    const summaryMessage = buildSummaryMessage(searchResults, totalCarsFound, totalNewCars, totalPosted, totalOverBudget);
-    if (summaryMessage) {
-      await sendSummaryMessage(botConfig.discordWebhookUrl, summaryMessage);
-      console.log('📊 Summary sent to Discord');
+    // Format last checked datetime for channel topic
+    const lastChecked = new Date().toLocaleString('en-GB', { 
+      timeZone: 'Europe/London',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const channelTopic = `Last checked: ${lastChecked}`;
+    
+    // Update channel topic with last checked time
+    const topicUpdated = await updateChannelTopic(botConfig.discordWebhookUrl, botConfig.discordBotToken, channelTopic);
+    
+    // Only send summary message if there are results (cars found or posted)
+    if (totalCarsFound > 0 || totalPosted > 0) {
+      const summaryMessage = buildSummaryMessage(searchResults, totalCarsFound, totalNewCars, totalPosted, totalOverBudget);
+      if (summaryMessage) {
+        await sendSummaryMessage(botConfig.discordWebhookUrl, summaryMessage);
+        console.log('📊 Summary sent to Discord');
+      }
+    } else {
+      if (topicUpdated) {
+        console.log('📊 No results to report - channel topic updated');
+      } else {
+        console.log('📊 No results to report (channel topic update failed - check bot permissions)');
+      }
     }
     
   } catch (error) {

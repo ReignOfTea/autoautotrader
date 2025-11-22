@@ -292,14 +292,15 @@ async function createThreadFromMessage(channelId, messageId, threadName, botToke
 /**
  * Gets webhook information including channel ID
  * @param {string} webhookUrl - Discord webhook URL
+ * @param {boolean} verbose - Whether to log verbose messages (default: true)
  * @returns {Promise<Object|null>} - Webhook info or null
  */
-async function getWebhookInfo(webhookUrl) {
+async function getWebhookInfo(webhookUrl, verbose = true) {
   try {
     // Extract webhook ID and token from URL
     const match = webhookUrl.match(/webhooks\/(\d+)\/([^\/\?]+)/);
     if (!match) {
-      console.error(`   Could not parse webhook URL: ${webhookUrl}`);
+      if (verbose) console.error(`   Could not parse webhook URL: ${webhookUrl}`);
       return null;
     }
     
@@ -312,7 +313,7 @@ async function getWebhookInfo(webhookUrl) {
     
     const webhookInfoUrl = `${baseUrl}/api/v10/webhooks/${webhookId}/${webhookToken}`;
     
-    console.log(`   Fetching webhook info from: ${webhookInfoUrl}`);
+    if (verbose) console.log(`   Fetching webhook info from: ${webhookInfoUrl}`);
     
     const response = await fetch(webhookInfoUrl, {
       method: 'GET'
@@ -320,16 +321,18 @@ async function getWebhookInfo(webhookUrl) {
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`   Failed to get webhook info: ${response.status} ${response.statusText}`);
-      console.error(`   Error: ${errorText}`);
+      if (verbose) {
+        console.error(`   Failed to get webhook info: ${response.status} ${response.statusText}`);
+        console.error(`   Error: ${errorText}`);
+      }
       return null;
     }
     
     const webhookInfo = await response.json();
-    console.log(`   Webhook info retrieved: channel_id=${webhookInfo.channel_id}`);
+    if (verbose) console.log(`   Webhook info retrieved: channel_id=${webhookInfo.channel_id}`);
     return webhookInfo;
   } catch (error) {
-    console.error(`   Error getting webhook info:`, error.message);
+    if (verbose) console.error(`   Error getting webhook info:`, error.message);
     return null;
   }
 }
@@ -494,6 +497,84 @@ export async function sendSummaryMessage(webhookUrl, message) {
     return true;
   } catch (error) {
     console.error(`Error sending summary message:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Updates the Discord channel topic/description with the last checked datetime
+ * @param {string} webhookUrl - Discord webhook URL
+ * @param {string} botToken - Discord bot token (required for channel updates)
+ * @param {string} lastCheckedText - Text to set as channel topic
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function updateChannelTopic(webhookUrl, botToken, lastCheckedText) {
+  if (!botToken) {
+    console.log('   ℹ️  No bot token provided - cannot update channel topic');
+    return false;
+  }
+  
+  try {
+    console.log(`🔄 Updating channel topic: ${lastCheckedText}`);
+    
+    // Get channel ID from webhook (less verbose)
+    const webhookInfo = await getWebhookInfo(webhookUrl, false);
+    if (!webhookInfo || !webhookInfo.channel_id) {
+      console.error('⚠️  Could not get channel ID from webhook');
+      if (webhookInfo) {
+        console.error(`   Webhook info:`, JSON.stringify(webhookInfo, null, 2));
+      }
+      return false;
+    }
+    
+    const channelId = webhookInfo.channel_id;
+    const useCanary = webhookUrl.includes('canary.discord.com');
+    const baseUrl = useCanary ? 'https://canary.discord.com' : 'https://discord.com';
+    const channelUrl = `${baseUrl}/api/v10/channels/${channelId}`;
+    
+    console.log(`   Channel ID: ${channelId}`);
+    console.log(`   Channel URL: ${channelUrl}`);
+    
+    // Update channel topic (Discord channel topic is the description)
+    const payload = {
+      topic: lastCheckedText
+    };
+    
+    const response = await fetch(channelUrl, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bot ${botToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ❌ Failed to update channel topic: ${response.status} ${response.statusText}`);
+      console.error(`   Error details: ${errorText}`);
+      
+      // Provide helpful error messages
+      if (response.status === 403) {
+        console.error(`   💡 Bot needs "Manage Channels" permission to update topic`);
+        console.error(`   💡 To fix: Go to Server Settings → Roles → Select bot role → Enable "Manage Channels"`);
+        console.error(`   💡 Or: Right-click channel → Edit Channel → Permissions → Add bot → Enable "Manage Channels"`);
+      } else if (response.status === 404) {
+        console.error(`   💡 Channel not found - check if bot has access to the channel`);
+      }
+      
+      return false;
+    }
+    
+    const responseData = await response.json().catch(() => null);
+    console.log(`   ✅ Updated channel topic: ${lastCheckedText}`);
+    if (responseData && responseData.topic) {
+      console.log(`   Verified topic: ${responseData.topic}`);
+    }
+    return true;
+  } catch (error) {
+    console.error(`   ❌ Error updating channel topic:`, error.message);
+    console.error(`   Stack:`, error.stack);
     return false;
   }
 }

@@ -1,0 +1,26 @@
+{
+  "name": "auto-auto-trader",
+  "version": "1.0.0",
+  "description": "Discord bot that monitors Autotrader for new car listings",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "extract": "node src/extract.js",
+    "poll": "node src/poller.js"
+  },
+  "keywords": [
+    "autotrader",
+    "discord",
+    "bot",
+    "scraper"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^24.15.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1"
+  }
+}
+

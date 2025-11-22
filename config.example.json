@@ -1,0 +1,18 @@
+{
+  "discordWebhookUrl": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+  "discordBotToken": "YOUR_BOT_TOKEN_OPTIONAL",
+  "pollingIntervalMinutes": 15,
+  "searchConfig": {
+    "body-type": "CAR",
+    "channel": "cars",
+    "exclude-writeoff-categories": "on",
+    "make": "CAR",
+    "minimum-badge-engine-size": "2.0",
+    "model": "CAR",
+    "postcode": "YOUR_POSTCODE",
+    "price-to": "10000",
+    "sort": "most-recent",
+    "year-from": "2010"
+  }
+}
+

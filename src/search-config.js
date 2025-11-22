@@ -23,8 +23,28 @@ function loadConfig() {
       throw new Error('discordWebhookUrl is required in config.json');
     }
     
-    if (!config.searchConfig) {
-      throw new Error('searchConfig is required in config.json');
+    // Support both old single searchConfig and new searchConfigs array
+    if (!config.searchConfigs && !config.searchConfig) {
+      throw new Error('searchConfigs or searchConfig is required in config.json');
+    }
+    
+    // Migrate old searchConfig to searchConfigs array format
+    if (config.searchConfig && !config.searchConfigs) {
+      if (Array.isArray(config.searchConfig)) {
+        // If searchConfig is already an array, just add names and use it
+        config.searchConfigs = config.searchConfig.map((search, index) => ({
+          name: search.name || `Search ${index + 1}`,
+          ...search
+        }));
+        console.log('⚠️  Migrated searchConfig array to searchConfigs format');
+      } else {
+        // If searchConfig is a single object, wrap it in an array
+        config.searchConfigs = [{
+          name: 'Default Search',
+          ...config.searchConfig
+        }];
+        console.log('⚠️  Migrated single searchConfig to searchConfigs array format');
+      }
     }
     
     cachedConfig = config;
@@ -38,12 +58,34 @@ function loadConfig() {
 }
 
 /**
- * Gets the Autotrader search configuration
+ * Gets all Autotrader search configurations
+ * @returns {Array<Object>} Array of search configuration objects, each with a 'name' field
+ */
+export function getAllSearchConfigs() {
+  const config = loadConfig();
+  return config.searchConfigs || [];
+}
+
+/**
+ * Gets a specific Autotrader search configuration by name
+ * @param {string} searchName - Name of the search configuration
+ * @returns {Object|null} Search configuration object or null if not found
+ */
+export function getSearchConfigByName(searchName) {
+  const configs = getAllSearchConfigs();
+  return configs.find(s => s.name === searchName) || null;
+}
+
+/**
+ * Gets the first Autotrader search configuration (for backward compatibility)
  * @returns {Object} Search configuration object
  */
 export function getSearchConfig() {
-  const config = loadConfig();
-  return config.searchConfig;
+  const configs = getAllSearchConfigs();
+  if (configs.length === 0) {
+    throw new Error('No search configurations found in config.json');
+  }
+  return configs[0];
 }
 
 /**

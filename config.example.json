@@ -2,17 +2,21 @@
   "discordWebhookUrl": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
   "discordBotToken": "YOUR_BOT_TOKEN_OPTIONAL",
   "pollingIntervalMinutes": 15,
-  "searchConfig": {
-    "body-type": "CAR",
-    "channel": "cars",
-    "exclude-writeoff-categories": "on",
-    "make": "CAR",
-    "minimum-badge-engine-size": "2.0",
-    "model": "CAR",
-    "postcode": "YOUR_POSTCODE",
-    "price-to": "10000",
-    "sort": "most-recent",
-    "year-from": "2010"
-  }
+  "searchConfigs": [
+    {
+      "name": "Skoda Fabia Estate",
+      "body-type": "Estate",
+      "channel": "cars",
+      "exclude-writeoff-categories": "on",
+      "make": "Skoda",
+      "minimum-badge-engine-size": "1.2",
+      "maximum-badge-engine-size": "1.6",
+      "model": "Fabia",
+      "postcode": "YOUR_POSTCODE",
+      "price-to": "5000",
+      "sort": "most-recent",
+      "year-from": "2010"
+    }
+  ]
 }
 

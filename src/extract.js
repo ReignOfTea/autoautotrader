@@ -6,9 +6,10 @@ import { extractDetailsForCars } from './extract-details.js';
 /**
  * Extracts car listings from Autotrader based on search criteria
  * @param {Set<string>} postedCarIds - Optional set of already-posted car IDs to skip detail extraction for
+ * @param {Object} searchConfig - Optional search configuration object (uses default if not provided)
  * @returns {Promise<Array>} Array of car objects with detailed information
  */
-async function extractCarsFromAutotrader(postedCarIds = null) {
+async function extractCarsFromAutotrader(postedCarIds = null, searchConfig = null) {
   const browser = await puppeteer.launch({
     headless: true,
     args: [
@@ -31,8 +32,10 @@ async function extractCarsFromAutotrader(postedCarIds = null) {
 
     // Build the Autotrader search URL with parameters
     // Based on actual Autotrader URL format from user's search
-    const searchConfig = getSearchConfig();
-    const searchParams = new URLSearchParams(searchConfig);
+    const configToUse = searchConfig || getSearchConfig();
+    // Remove 'name' field if present (it's metadata, not a URL parameter)
+    const { name, ...searchParamsObj } = configToUse;
+    const searchParams = new URLSearchParams(searchParamsObj);
 
     const autotraderUrl = `https://www.autotrader.co.uk/car-search?${searchParams.toString()}`;
     

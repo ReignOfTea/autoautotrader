@@ -1,23 +1,42 @@
 import { extractCarsFromAutotrader } from './extract.js';
 import { postCarsToDiscord } from './discord-poster.js';
-import { loadBotConfig } from './search-config.js';
+import { loadBotConfig, getAllSearchConfigs } from './search-config.js';
 import fs from 'fs/promises';
 import path from 'path';
 
 /**
  * File to track which cars have been posted to Discord
+ * Structure: ["carId1", "carId2", ...]
  */
 const POSTED_CARS_FILE = path.join(process.cwd(), 'posted-cars.json');
 
 /**
  * Loads the list of posted car IDs
- * @returns {Promise<Set<string>>} - Set of posted car IDs
+ * @returns {Promise<Set<string>>} Set of posted car IDs
  */
 async function loadPostedCars() {
   try {
     const data = await fs.readFile(POSTED_CARS_FILE, 'utf-8');
-    const postedCars = JSON.parse(data);
-    return new Set(postedCars);
+    const postedCarsData = JSON.parse(data);
+    
+    // Handle migration from old object format to array format
+    if (!Array.isArray(postedCarsData)) {
+      console.log('⚠️  Migrating posted-cars.json from object to array format');
+      // Extract all car IDs from all searches
+      const allCarIds = [];
+      for (const carIds of Object.values(postedCarsData)) {
+        if (Array.isArray(carIds)) {
+          allCarIds.push(...carIds);
+        }
+      }
+      // Remove duplicates
+      const uniqueCarIds = [...new Set(allCarIds)];
+      await fs.writeFile(POSTED_CARS_FILE, JSON.stringify(uniqueCarIds, null, 2));
+      console.log(`   ✅ Migrated ${uniqueCarIds.length} unique cars to array format`);
+      return new Set(uniqueCarIds);
+    }
+    
+    return new Set(postedCarsData);
   } catch (error) {
     if (error.code === 'ENOENT') {
       // File doesn't exist yet, return empty set
@@ -52,25 +71,23 @@ async function markCarAsPosted(postedCars, carId) {
 }
 
 /**
- * Main polling function - checks for new cars and posts them to Discord
+ * Processes a single search configuration
+ * @param {Object} searchConfig - Search configuration object
+ * @param {Object} botConfig - Bot configuration object
+ * @param {Object} postedCars - Object mapping search names to Sets of posted car IDs
  */
-async function pollForNewCars() {
-  console.log('\n🔍 Starting car search...');
-  console.log(`⏰ ${new Date().toLocaleString()}`);
+async function processSearch(searchConfig, botConfig, postedCars) {
+  const searchName = searchConfig.name || 'Unnamed Search';
+  console.log(`\n🔍 Processing search: "${searchName}"`);
   
   try {
-    // Load bot configuration
-    const botConfig = loadBotConfig();
-    
-    // Load list of already posted cars
-    const postedCars = await loadPostedCars();
-    console.log(`📋 Loaded ${postedCars.size} previously posted cars`);
+    console.log(`   📋 ${postedCars.size} previously posted cars (across all searches)`);
     
     // Extract all cars from Autotrader (pass posted cars to skip detail extraction for them)
-    const allCars = await extractCarsFromAutotrader(postedCars);
+    const allCars = await extractCarsFromAutotrader(postedCars, searchConfig);
     
     if (allCars.length === 0) {
-      console.log('⚠️  No cars found in search results');
+      console.log(`   ⚠️  No cars found in search results`);
       return;
     }
     
@@ -80,18 +97,18 @@ async function pollForNewCars() {
       return carId && !postedCars.has(carId);
     });
     
-    console.log(`\n📊 Results:`);
-    console.log(`   - Total cars found: ${allCars.length}`);
-    console.log(`   - Already posted: ${allCars.length - newCars.length}`);
-    console.log(`   - New cars: ${newCars.length}`);
+    console.log(`   📊 Results:`);
+    console.log(`      - Total cars found: ${allCars.length}`);
+    console.log(`      - Already posted: ${allCars.length - newCars.length}`);
+    console.log(`      - New cars: ${newCars.length}`);
     
     if (newCars.length === 0) {
-      console.log('✅ No new cars to post!');
+      console.log(`   ✅ No new cars to post for this search!`);
       return;
     }
     
     // Post new cars to Discord
-    console.log(`\n📤 Posting ${newCars.length} new car(s) to Discord...`);
+    console.log(`   📤 Posting ${newCars.length} new car(s) to Discord...`);
     const successCount = await postCarsToDiscord(
       botConfig.discordWebhookUrl, 
       newCars, 
@@ -107,7 +124,48 @@ async function pollForNewCars() {
       }
     }
     
-    console.log(`\n✅ Posted ${successCount}/${newCars.length} cars to Discord`);
+    console.log(`   ✅ Posted ${successCount}/${newCars.length} cars to Discord`);
+    
+  } catch (error) {
+    console.error(`   ❌ Error processing search "${searchName}":`, error.message);
+  }
+}
+
+/**
+ * Main polling function - checks for new cars and posts them to Discord
+ */
+async function pollForNewCars() {
+  console.log('\n🔍 Starting car searches...');
+  console.log(`⏰ ${new Date().toLocaleString()}`);
+  
+  try {
+    // Load bot configuration
+    const botConfig = loadBotConfig();
+    
+    // Load all search configurations
+    const searchConfigs = getAllSearchConfigs();
+    
+    if (searchConfigs.length === 0) {
+      console.log('⚠️  No search configurations found in config.json');
+      return;
+    }
+    
+    console.log(`📋 Found ${searchConfigs.length} search configuration(s)`);
+    
+    // Load list of already posted cars (shared across all searches)
+    const postedCars = await loadPostedCars();
+    
+    // Process each search configuration
+    for (const searchConfig of searchConfigs) {
+      await processSearch(searchConfig, botConfig, postedCars);
+      
+      // Add a small delay between searches to avoid overwhelming the server
+      if (searchConfig !== searchConfigs[searchConfigs.length - 1]) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    console.log('\n✅ All searches completed!');
     
   } catch (error) {
     console.error('❌ Error during polling:', error);
@@ -124,8 +182,12 @@ export async function startPolling() {
     const intervalMinutes = botConfig.pollingIntervalMinutes;
     const intervalMs = intervalMinutes * 60 * 1000;
     
+    // Load search configurations to show count
+    const searchConfigs = getAllSearchConfigs();
+    
     console.log('🤖 AutoAutoTrader Bot Started');
     console.log(`⏱️  Polling interval: ${intervalMinutes} minutes`);
+    console.log(`🔍 Search configurations: ${searchConfigs.length}`);
     console.log(`🔗 Discord webhook: ${botConfig.discordWebhookUrl ? 'Configured' : 'Not configured'}`);
     console.log('\n---\n');
     
@@ -158,4 +220,3 @@ if (process.argv[1] && process.argv[1].includes('poller.js')) {
 }
 
 export { pollForNewCars };
-

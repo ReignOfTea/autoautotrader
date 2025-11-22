@@ -71,6 +71,57 @@ async function markCarAsPosted(postedCars, carId) {
 }
 
 /**
+ * Parses a price string and returns the numeric value
+ * Handles formats like "£5,000", "5000", "£5,000.00", "Price not available", etc.
+ * @param {string} priceString - Price string to parse
+ * @returns {number|null} Numeric price value or null if unable to parse
+ */
+function parsePrice(priceString) {
+  if (!priceString || typeof priceString !== 'string') {
+    return null;
+  }
+  
+  // Remove currency symbols, commas, and whitespace
+  const cleaned = priceString.replace(/[£$€,\s]/g, '');
+  
+  // Extract first number (handles cases like "£5,000 or nearest offer")
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  if (match) {
+    return parseFloat(match[1]);
+  }
+  
+  return null;
+}
+
+/**
+ * Checks if a car's price is within the configured maximum
+ * @param {Object} car - Car object with price information
+ * @param {string|number} maxPrice - Maximum price from config (as string or number)
+ * @returns {boolean} True if price is within limit or price cannot be determined
+ */
+function isPriceWithinLimit(car, maxPrice) {
+  // If no max price configured, allow all cars
+  if (!maxPrice) {
+    return true;
+  }
+  
+  const maxPriceNum = typeof maxPrice === 'string' ? parseFloat(maxPrice) : maxPrice;
+  if (isNaN(maxPriceNum)) {
+    return true; // If max price is invalid, allow the car
+  }
+  
+  // Try to get price from car object (could be in price field)
+  const carPrice = parsePrice(car.price);
+  
+  // If we can't parse the price, allow it (better to post than miss a good deal)
+  if (carPrice === null) {
+    return true;
+  }
+  
+  return carPrice <= maxPriceNum;
+}
+
+/**
  * Processes a single search configuration
  * @param {Object} searchConfig - Search configuration object
  * @param {Object} botConfig - Bot configuration object
@@ -97,34 +148,65 @@ async function processSearch(searchConfig, botConfig, postedCars) {
       return carId && !postedCars.has(carId);
     });
     
+    // Get max price from search config
+    const maxPrice = searchConfig['price-to'];
+    
+    // Filter cars by price and separate into postable and over-budget
+    const carsToPost = [];
+    const overBudgetCars = [];
+    
+    for (const car of newCars) {
+      if (isPriceWithinLimit(car, maxPrice)) {
+        carsToPost.push(car);
+      } else {
+        overBudgetCars.push(car);
+      }
+    }
+    
     console.log(`   📊 Results:`);
     console.log(`      - Total cars found: ${allCars.length}`);
     console.log(`      - Already posted: ${allCars.length - newCars.length}`);
     console.log(`      - New cars: ${newCars.length}`);
-    
-    if (newCars.length === 0) {
-      console.log(`   ✅ No new cars to post for this search!`);
-      return;
+    if (maxPrice) {
+      console.log(`      - Within budget (≤£${maxPrice}): ${carsToPost.length}`);
+      console.log(`      - Over budget (>£${maxPrice}): ${overBudgetCars.length}`);
     }
     
-    // Post new cars to Discord
-    console.log(`   📤 Posting ${newCars.length} new car(s) to Discord...`);
-    const successCount = await postCarsToDiscord(
-      botConfig.discordWebhookUrl, 
-      newCars, 
-      2000, 
-      botConfig.discordBotToken
-    );
-    
-    // Mark successfully posted cars
-    for (const car of newCars) {
+    // Mark over-budget cars as posted (so we don't check them again)
+    for (const car of overBudgetCars) {
       const carId = car.id || car.carId;
       if (carId) {
         await markCarAsPosted(postedCars, carId);
       }
     }
     
-    console.log(`   ✅ Posted ${successCount}/${newCars.length} cars to Discord`);
+    if (overBudgetCars.length > 0) {
+      console.log(`   ⏭️  Marked ${overBudgetCars.length} over-budget car(s) as posted (won't check again)`);
+    }
+    
+    if (carsToPost.length === 0) {
+      console.log(`   ✅ No cars within budget to post for this search!`);
+      return;
+    }
+    
+    // Post cars within budget to Discord
+    console.log(`   📤 Posting ${carsToPost.length} car(s) within budget to Discord...`);
+    const successCount = await postCarsToDiscord(
+      botConfig.discordWebhookUrl, 
+      carsToPost, 
+      2000, 
+      botConfig.discordBotToken
+    );
+    
+    // Mark successfully posted cars
+    for (const car of carsToPost) {
+      const carId = car.id || car.carId;
+      if (carId) {
+        await markCarAsPosted(postedCars, carId);
+      }
+    }
+    
+    console.log(`   ✅ Posted ${successCount}/${carsToPost.length} cars to Discord`);
     
   } catch (error) {
     console.error(`   ❌ Error processing search "${searchName}":`, error.message);

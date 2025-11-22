@@ -462,3 +462,39 @@ export async function postCarsToDiscord(webhookUrl, cars, delayMs = 2000, botTok
   return successCount;
 }
 
+/**
+ * Sends a summary message to Discord without notifying members
+ * @param {string} webhookUrl - Discord webhook URL
+ * @param {string} message - Message content to send
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function sendSummaryMessage(webhookUrl, message) {
+  try {
+    // Discord flag to suppress notifications (SUPPRESS_NOTIFICATIONS = 4096)
+    const payload = {
+      content: message,
+      flags: 4096 // Suppress notifications
+    };
+    
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Failed to send summary message: ${response.status} ${response.statusText}`);
+      console.error(`Error: ${errorText}`);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`Error sending summary message:`, error.message);
+    return false;
+  }
+}
+

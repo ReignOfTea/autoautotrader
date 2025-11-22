@@ -1,5 +1,5 @@
 import { extractCarsFromAutotrader } from './extract.js';
-import { postCarsToDiscord } from './discord-poster.js';
+import { postCarsToDiscord, sendSummaryMessage } from './discord-poster.js';
 import { loadBotConfig, getAllSearchConfigs } from './search-config.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -139,7 +139,12 @@ async function processSearch(searchConfig, botConfig, postedCars) {
     
     if (allCars.length === 0) {
       console.log(`   ⚠️  No cars found in search results`);
-      return;
+      return {
+        totalFound: 0,
+        newCars: 0,
+        posted: 0,
+        overBudget: 0
+      };
     }
     
     // Filter for new cars (not yet posted)
@@ -184,33 +189,96 @@ async function processSearch(searchConfig, botConfig, postedCars) {
       console.log(`   ⏭️  Marked ${overBudgetCars.length} over-budget car(s) as posted (won't check again)`);
     }
     
-    if (carsToPost.length === 0) {
-      console.log(`   ✅ No cars within budget to post for this search!`);
-      return;
-    }
-    
-    // Post cars within budget to Discord
-    console.log(`   📤 Posting ${carsToPost.length} car(s) within budget to Discord...`);
-    const successCount = await postCarsToDiscord(
-      botConfig.discordWebhookUrl, 
-      carsToPost, 
-      2000, 
-      botConfig.discordBotToken
-    );
-    
-    // Mark successfully posted cars
-    for (const car of carsToPost) {
-      const carId = car.id || car.carId;
-      if (carId) {
-        await markCarAsPosted(postedCars, carId);
+    let successCount = 0;
+    if (carsToPost.length > 0) {
+      // Post cars within budget to Discord
+      console.log(`   📤 Posting ${carsToPost.length} car(s) within budget to Discord...`);
+      successCount = await postCarsToDiscord(
+        botConfig.discordWebhookUrl, 
+        carsToPost, 
+        2000, 
+        botConfig.discordBotToken
+      );
+      
+      // Mark successfully posted cars
+      for (const car of carsToPost) {
+        const carId = car.id || car.carId;
+        if (carId) {
+          await markCarAsPosted(postedCars, carId);
+        }
       }
+      
+      console.log(`   ✅ Posted ${successCount}/${carsToPost.length} cars to Discord`);
+    } else {
+      console.log(`   ✅ No cars within budget to post for this search!`);
     }
     
-    console.log(`   ✅ Posted ${successCount}/${carsToPost.length} cars to Discord`);
+    return {
+      totalFound: allCars.length,
+      newCars: newCars.length,
+      posted: successCount,
+      overBudget: overBudgetCars.length
+    };
     
   } catch (error) {
     console.error(`   ❌ Error processing search "${searchName}":`, error.message);
+    return null;
   }
+}
+
+/**
+ * Builds a summary message for Discord
+ * @param {Array} searchResults - Array of search result objects
+ * @param {number} totalCarsFound - Total cars found across all searches
+ * @param {number} totalNewCars - Total new cars found
+ * @param {number} totalPosted - Total cars posted to Discord
+ * @param {number} totalOverBudget - Total cars over budget
+ * @returns {string|null} Summary message or null if nothing to report
+ */
+function buildSummaryMessage(searchResults, totalCarsFound, totalNewCars, totalPosted, totalOverBudget) {
+  const timestamp = new Date().toLocaleString('en-GB', { 
+    timeZone: 'Europe/London',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  let message = `✅ **Check Complete** - ${timestamp}\n\n`;
+  
+  if (totalCarsFound === 0) {
+    message += `No cars found in any search.`;
+    return message;
+  }
+  
+  message += `**Summary:**\n`;
+  message += `• Total cars found: ${totalCarsFound}\n`;
+  message += `• New cars: ${totalNewCars}\n`;
+  
+  if (totalOverBudget > 0) {
+    message += `• Over budget (filtered): ${totalOverBudget}\n`;
+  }
+  
+  if (totalPosted > 0) {
+    message += `• **Posted to Discord: ${totalPosted}** 🎉\n`;
+  } else {
+    message += `• Posted: 0\n`;
+  }
+  
+  // Add per-search breakdown if multiple searches
+  if (searchResults.length > 1) {
+    message += `\n**Per Search:**\n`;
+    for (const result of searchResults) {
+      message += `• ${result.name}: ${result.totalFound} found, ${result.posted} posted`;
+      if (result.overBudget > 0) {
+        message += `, ${result.overBudget} over budget`;
+      }
+      message += `\n`;
+    }
+  }
+  
+  return message;
 }
 
 /**
@@ -237,17 +305,46 @@ async function pollForNewCars() {
     // Load list of already posted cars (shared across all searches)
     const postedCars = await loadPostedCars();
     
+    // Track summary statistics
+    let totalCarsFound = 0;
+    let totalNewCars = 0;
+    let totalPosted = 0;
+    let totalOverBudget = 0;
+    const searchResults = [];
+    
     // Process each search configuration
-    for (const searchConfig of searchConfigs) {
-      await processSearch(searchConfig, botConfig, postedCars);
+    for (let i = 0; i < searchConfigs.length; i++) {
+      const searchConfig = searchConfigs[i];
+      const searchName = searchConfig.name || `Search ${i + 1}`;
+      console.log(`\n[${i + 1}/${searchConfigs.length}] Processing: ${searchName}`);
+      console.log(`   Make: ${searchConfig.make || 'N/A'}, Model: ${searchConfig.model || 'N/A'}`);
+      
+      const result = await processSearch(searchConfig, botConfig, postedCars);
+      if (result) {
+        totalCarsFound += result.totalFound || 0;
+        totalNewCars += result.newCars || 0;
+        totalPosted += result.posted || 0;
+        totalOverBudget += result.overBudget || 0;
+        searchResults.push({
+          name: searchName,
+          ...result
+        });
+      }
       
       // Add a small delay between searches to avoid overwhelming the server
-      if (searchConfig !== searchConfigs[searchConfigs.length - 1]) {
+      if (i < searchConfigs.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
     console.log('\n✅ All searches completed!');
+    
+    // Send summary message to Discord (without notifications)
+    const summaryMessage = buildSummaryMessage(searchResults, totalCarsFound, totalNewCars, totalPosted, totalOverBudget);
+    if (summaryMessage) {
+      await sendSummaryMessage(botConfig.discordWebhookUrl, summaryMessage);
+      console.log('📊 Summary sent to Discord');
+    }
     
   } catch (error) {
     console.error('❌ Error during polling:', error);

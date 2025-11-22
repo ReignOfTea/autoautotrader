@@ -352,22 +352,7 @@ async function pollForNewCars() {
     const channelTopic = `Last checked: ${lastChecked}`;
     
     // Update channel topic with last checked time
-    const topicUpdated = await updateChannelTopic(botConfig.discordWebhookUrl, botConfig.discordBotToken, channelTopic);
-    
-    // Only send summary message if there are results (cars found or posted)
-    if (totalCarsFound > 0 || totalPosted > 0) {
-      const summaryMessage = buildSummaryMessage(searchResults, totalCarsFound, totalNewCars, totalPosted, totalOverBudget);
-      if (summaryMessage) {
-        await sendSummaryMessage(botConfig.discordWebhookUrl, summaryMessage);
-        console.log('📊 Summary sent to Discord');
-      }
-    } else {
-      if (topicUpdated) {
-        console.log('📊 No results to report - channel topic updated');
-      } else {
-        console.log('📊 No results to report (channel topic update failed - check bot permissions)');
-      }
-    }
+    await updateChannelTopic(botConfig.discordWebhookUrl, botConfig.discordBotToken, channelTopic);
     
   } catch (error) {
     console.error('❌ Error during polling:', error);

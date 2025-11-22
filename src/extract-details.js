@@ -230,3 +230,4 @@ export async function extractDetailsForCars(browser, cars) {
   return detailedCars;
 }
 
+

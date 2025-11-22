@@ -66,8 +66,8 @@ async function pollForNewCars() {
     const postedCars = await loadPostedCars();
     console.log(`📋 Loaded ${postedCars.size} previously posted cars`);
     
-    // Extract all cars from Autotrader
-    const allCars = await extractCarsFromAutotrader();
+    // Extract all cars from Autotrader (pass posted cars to skip detail extraction for them)
+    const allCars = await extractCarsFromAutotrader(postedCars);
     
     if (allCars.length === 0) {
       console.log('⚠️  No cars found in search results');

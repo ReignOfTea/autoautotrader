@@ -5,8 +5,10 @@ import { extractDetailsForCars } from './extract-details.js';
 
 /**
  * Extracts car listings from Autotrader based on search criteria
+ * @param {Set<string>} postedCarIds - Optional set of already-posted car IDs to skip detail extraction for
+ * @returns {Promise<Array>} Array of car objects with detailed information
  */
-async function extractCarsFromAutotrader() {
+async function extractCarsFromAutotrader(postedCarIds = null) {
   const browser = await puppeteer.launch({
     headless: true,
     args: [
@@ -174,9 +176,29 @@ async function extractCarsFromAutotrader() {
     // Close the initial page as we'll use a new one for detail extraction
     await page.close();
 
-    // Extract detailed information for all cars
-    console.log(`\n📋 Extracting detailed information for ${cars.length} car(s)...`);
-    const detailedCars = await extractDetailsForCars(browser, cars);
+    // Filter out already-posted cars if we have the list
+    let carsToProcess = cars;
+    if (postedCarIds && postedCarIds.size > 0) {
+      const newCars = cars.filter(car => {
+        const carId = car.id || car.carId;
+        return carId && !postedCarIds.has(carId);
+      });
+      
+      const skippedCount = cars.length - newCars.length;
+      if (skippedCount > 0) {
+        console.log(`\n⏭️  Skipping ${skippedCount} already-posted car(s) (no detail extraction needed)`);
+      }
+      carsToProcess = newCars;
+    }
+
+    // Extract detailed information only for new cars
+    let detailedCars = [];
+    if (carsToProcess.length > 0) {
+      console.log(`\n📋 Extracting detailed information for ${carsToProcess.length} new car(s)...`);
+      detailedCars = await extractDetailsForCars(browser, carsToProcess);
+    } else {
+      console.log(`\n✅ All cars have already been posted - no detail extraction needed`);
+    }
 
     // Log the first few cars for debugging
     console.log('\n✅ Detailed extraction complete!');

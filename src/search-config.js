@@ -7,7 +7,7 @@ let cachedConfig = null;
  * Loads the full configuration from config.json file
  * @returns {Object} Full configuration object
  */
-function loadConfig() {
+export function loadConfig() {
   if (cachedConfig) {
     return cachedConfig;
   }

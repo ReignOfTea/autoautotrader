@@ -2,6 +2,8 @@
  * Discord webhook posting functionality
  */
 
+import { loadConfig } from './search-config.js';
+
 /**
  * Maps car color names to Discord embed colors (decimal)
  * Discord embeds use decimal color values (0xRRGGBB)
@@ -79,6 +81,69 @@ function getColorFromName(colorName) {
   
   // Default to blue if no match
   return 0x3498DB;
+}
+
+/**
+ * Detects features in a car description based on configured feature words
+ * @param {string} description - Car description text
+ * @returns {Array<string>} Array of detected feature names
+ */
+function detectFeatures(description) {
+  if (!description || typeof description !== 'string') {
+    return [];
+  }
+  
+  try {
+    const config = loadConfig();
+    const featureWords = config.featureWords || {};
+    const detectedFeatures = [];
+    
+    // Check each feature
+    for (const [featureName, patterns] of Object.entries(featureWords)) {
+      if (!Array.isArray(patterns)) {
+        continue;
+      }
+      
+      // Check if any pattern matches
+      for (const pattern of patterns) {
+        try {
+          // Handle regex patterns (strings starting and ending with /)
+          if (pattern.startsWith('/')) {
+            // Extract flags and pattern
+            // Pattern format: /pattern/flags or /pattern/
+            const lastSlashIndex = pattern.lastIndexOf('/');
+            if (lastSlashIndex > 0) {
+              const regexPattern = pattern.substring(1, lastSlashIndex);
+              // If there's text after the last slash, use it as flags, otherwise default to 'i'
+              const flags = lastSlashIndex < pattern.length - 1 
+                ? pattern.substring(lastSlashIndex + 1) 
+                : 'i';
+              const regex = new RegExp(regexPattern, flags);
+              if (regex.test(description)) {
+                detectedFeatures.push(featureName);
+                break; // Found a match for this feature, move to next feature
+              }
+            }
+          } else {
+            // Simple string search (case-insensitive)
+            const regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            if (regex.test(description)) {
+              detectedFeatures.push(featureName);
+              break; // Found a match for this feature, move to next feature
+            }
+          }
+        } catch (error) {
+          // Skip invalid regex patterns
+          console.warn(`Invalid pattern for feature "${featureName}": ${pattern}`, error.message);
+        }
+      }
+    }
+    
+    return detectedFeatures;
+  } catch (error) {
+    console.warn('Error detecting features:', error.message);
+    return [];
+  }
 }
 
 /**
@@ -183,6 +248,18 @@ function createCarEmbed(car) {
       name: '📞 Phone',
       value: car.phoneNumber,
       inline: true
+    });
+  }
+  
+  // Detect features from description
+  const detectedFeatures = detectFeatures(car.description);
+  if (detectedFeatures.length > 0) {
+    // Format features with checkmarks
+    const featuresText = detectedFeatures.map(feature => `✅ ${feature}`).join('\n');
+    fields.push({
+      name: '✨ Features',
+      value: featuresText,
+      inline: false
     });
   }
   

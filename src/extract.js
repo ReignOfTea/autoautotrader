@@ -33,8 +33,8 @@ async function extractCarsFromAutotrader(postedCarIds = null, searchConfig = nul
     // Build the Autotrader search URL with parameters
     // Based on actual Autotrader URL format from user's search
     const configToUse = searchConfig || getSearchConfig();
-    // Remove 'name' field if present (it's metadata, not a URL parameter)
-    const { name, ...searchParamsObj } = configToUse;
+    // Remove metadata fields that aren't URL parameters
+    const { name, 'max-price': maxPrice, 'max-milage': maxMileage, 'max-distance': maxDistance, ...searchParamsObj } = configToUse;
     const searchParams = new URLSearchParams(searchParamsObj);
 
     const autotraderUrl = `https://www.autotrader.co.uk/car-search?${searchParams.toString()}`;

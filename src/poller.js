@@ -256,7 +256,7 @@ async function processSearch(searchConfig, botConfig, postedCars) {
     });
     
     // Get filter limits from search config
-    const maxPrice = searchConfig['price-to'];
+    const maxPrice = searchConfig['max-price'];
     const maxMileage = searchConfig['max-milage'];
     const maxDistance = searchConfig['max-distance'];
     
@@ -286,7 +286,7 @@ async function processSearch(searchConfig, botConfig, postedCars) {
       console.log(`      - Filtered out: ${filteredCars.length}`);
       if (maxPrice) {
         const overPrice = filteredCars.filter(car => !isPriceWithinLimit(car, maxPrice)).length;
-        if (overPrice > 0) console.log(`         - Over budget (>£${maxPrice}): ${overPrice}`);
+        if (overPrice > 0) console.log(`         - Over max price (>£${maxPrice}): ${overPrice}`);
       }
       if (maxMileage) {
         const overMileage = filteredCars.filter(car => !isMileageWithinLimit(car, maxMileage)).length;

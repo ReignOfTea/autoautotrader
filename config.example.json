@@ -2,6 +2,35 @@
   "discordWebhookUrl": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
   "discordBotToken": "YOUR_BOT_TOKEN_OPTIONAL",
   "pollingIntervalMinutes": 15,
+  "featureWords": {
+    "bluetooth": [
+      "/bluetooth/i",
+      "/BT/"
+    ],
+    "AUX": [
+      "/aux/i",
+      "/Auxiliary/i"
+    ],
+    "USB": [
+      "/USB/i"
+    ],
+    "cruise control": [
+      "/cruise control/i"
+    ],
+    "DAB Radio": [
+      "/DAB/i"
+    ],
+    "Parking Sensors": [
+      "/Parking Sensors/i",
+      "/P-Sensors/i",
+      "/Park Sensors/i"
+    ],
+    "Reverse Camera": [
+      "/Reverse Camera/i",
+      "/R-Camera/i",
+      "/Reversing Camera/i"
+    ]
+  },
   "searchConfigs": [
     {
       "name": "Skoda Fabia Estate",
@@ -14,6 +43,7 @@
       "model": "Fabia",
       "postcode": "YOUR_POSTCODE",
       "price-to": "5000",
+      "max-price": "5000",
       "max-milage": "100000",
       "max-distance": "50",
       "sort": "most-recent",

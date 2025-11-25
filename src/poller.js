@@ -122,6 +122,108 @@ function isPriceWithinLimit(car, maxPrice) {
 }
 
 /**
+ * Parses a mileage string and returns the numeric value
+ * Handles formats like "50,000 miles", "50000 mi", "50,000", etc.
+ * @param {string} mileageString - Mileage string to parse
+ * @returns {number|null} Numeric mileage value or null if unable to parse
+ */
+function parseMileage(mileageString) {
+  if (!mileageString || typeof mileageString !== 'string') {
+    return null;
+  }
+  
+  // Remove commas, whitespace, and common mileage-related text
+  const cleaned = mileageString.replace(/[,\s]/g, '').toLowerCase();
+  
+  // Extract first number (handles cases like "50,000 miles" or "50000 mi")
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  if (match) {
+    return parseFloat(match[1]);
+  }
+  
+  return null;
+}
+
+/**
+ * Checks if a car's mileage is within the configured maximum
+ * @param {Object} car - Car object with mileage information
+ * @param {string|number} maxMileage - Maximum mileage from config (as string or number)
+ * @returns {boolean} True if mileage is within limit or mileage cannot be determined
+ */
+function isMileageWithinLimit(car, maxMileage) {
+  // If no max mileage configured, allow all cars
+  if (!maxMileage) {
+    return true;
+  }
+  
+  const maxMileageNum = typeof maxMileage === 'string' ? parseFloat(maxMileage) : maxMileage;
+  if (isNaN(maxMileageNum)) {
+    return true; // If max mileage is invalid, allow the car
+  }
+  
+  // Try to get mileage from car object
+  const carMileage = parseMileage(car.mileage);
+  
+  // If we can't parse the mileage, allow it (better to post than miss a good deal)
+  if (carMileage === null) {
+    return true;
+  }
+  
+  return carMileage <= maxMileageNum;
+}
+
+/**
+ * Parses a distance string and returns the numeric value
+ * Handles formats like "25 miles", "25.5 miles away", "25 mi", etc.
+ * Looks for distance in location strings
+ * @param {string} locationString - Location string that may contain distance
+ * @returns {number|null} Numeric distance value in miles or null if unable to parse
+ */
+function parseDistance(locationString) {
+  if (!locationString || typeof locationString !== 'string') {
+    return null;
+  }
+  
+  // Look for patterns like "25 miles", "25.5 miles away", "25 mi", etc.
+  // Case insensitive, handles "miles", "mile", "mi", "m"
+  const match = locationString.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi|m)\b/i);
+  if (match) {
+    return parseFloat(match[1]);
+  }
+  
+  return null;
+}
+
+/**
+ * Checks if a car's distance is within the configured maximum
+ * @param {Object} car - Car object with location information
+ * @param {string|number} maxDistance - Maximum distance from config (as string or number)
+ * @returns {boolean} True if distance is within limit or distance cannot be determined
+ */
+function isDistanceWithinLimit(car, maxDistance) {
+  // If no max distance configured, allow all cars
+  if (!maxDistance) {
+    return true;
+  }
+  
+  const maxDistanceNum = typeof maxDistance === 'string' ? parseFloat(maxDistance) : maxDistance;
+  if (isNaN(maxDistanceNum)) {
+    return true; // If max distance is invalid, allow the car
+  }
+  
+  // Try to get distance from location field (could be in location, contactLocation, or sellerLocation)
+  const locationText = car.location || car.contactLocation || car.sellerLocation || '';
+  const carDistance = parseDistance(locationText);
+  
+  // If we can't parse the distance, allow it (better to post than miss a good deal)
+  if (carDistance === null) {
+    return true;
+  }
+  
+  return carDistance <= maxDistanceNum;
+}
+
+/**
  * Processes a single search configuration
  * @param {Object} searchConfig - Search configuration object
  * @param {Object} botConfig - Bot configuration object
@@ -153,18 +255,25 @@ async function processSearch(searchConfig, botConfig, postedCars) {
       return carId && !postedCars.has(carId);
     });
     
-    // Get max price from search config
+    // Get filter limits from search config
     const maxPrice = searchConfig['price-to'];
+    const maxMileage = searchConfig['max-milage'];
+    const maxDistance = searchConfig['max-distance'];
     
-    // Filter cars by price and separate into postable and over-budget
+    // Filter cars by price, mileage, and distance
     const carsToPost = [];
-    const overBudgetCars = [];
+    const filteredCars = [];
     
     for (const car of newCars) {
-      if (isPriceWithinLimit(car, maxPrice)) {
+      // Check all filters
+      const priceOk = isPriceWithinLimit(car, maxPrice);
+      const mileageOk = isMileageWithinLimit(car, maxMileage);
+      const distanceOk = isDistanceWithinLimit(car, maxDistance);
+      
+      if (priceOk && mileageOk && distanceOk) {
         carsToPost.push(car);
       } else {
-        overBudgetCars.push(car);
+        filteredCars.push(car);
       }
     }
     
@@ -172,27 +281,39 @@ async function processSearch(searchConfig, botConfig, postedCars) {
     console.log(`      - Total cars found: ${allCars.length}`);
     console.log(`      - Already posted: ${allCars.length - newCars.length}`);
     console.log(`      - New cars: ${newCars.length}`);
-    if (maxPrice) {
-      console.log(`      - Within budget (≤£${maxPrice}): ${carsToPost.length}`);
-      console.log(`      - Over budget (>£${maxPrice}): ${overBudgetCars.length}`);
+    if (maxPrice || maxMileage || maxDistance) {
+      console.log(`      - Passed all filters: ${carsToPost.length}`);
+      console.log(`      - Filtered out: ${filteredCars.length}`);
+      if (maxPrice) {
+        const overPrice = filteredCars.filter(car => !isPriceWithinLimit(car, maxPrice)).length;
+        if (overPrice > 0) console.log(`         - Over budget (>£${maxPrice}): ${overPrice}`);
+      }
+      if (maxMileage) {
+        const overMileage = filteredCars.filter(car => !isMileageWithinLimit(car, maxMileage)).length;
+        if (overMileage > 0) console.log(`         - Over mileage (>${maxMileage}): ${overMileage}`);
+      }
+      if (maxDistance) {
+        const overDistance = filteredCars.filter(car => !isDistanceWithinLimit(car, maxDistance)).length;
+        if (overDistance > 0) console.log(`         - Over distance (>${maxDistance} miles): ${overDistance}`);
+      }
     }
     
-    // Mark over-budget cars as posted (so we don't check them again)
-    for (const car of overBudgetCars) {
+    // Mark filtered cars as posted (so we don't check them again)
+    for (const car of filteredCars) {
       const carId = car.id || car.carId;
       if (carId) {
         await markCarAsPosted(postedCars, carId);
       }
     }
     
-    if (overBudgetCars.length > 0) {
-      console.log(`   ⏭️  Marked ${overBudgetCars.length} over-budget car(s) as posted (won't check again)`);
+    if (filteredCars.length > 0) {
+      console.log(`   ⏭️  Marked ${filteredCars.length} filtered car(s) as posted (won't check again)`);
     }
     
     let successCount = 0;
     if (carsToPost.length > 0) {
-      // Post cars within budget to Discord
-      console.log(`   📤 Posting ${carsToPost.length} car(s) within budget to Discord...`);
+      // Post cars that passed all filters to Discord
+      console.log(`   📤 Posting ${carsToPost.length} car(s) that passed all filters to Discord...`);
       successCount = await postCarsToDiscord(
         botConfig.discordWebhookUrl, 
         carsToPost, 
@@ -210,14 +331,14 @@ async function processSearch(searchConfig, botConfig, postedCars) {
       
       console.log(`   ✅ Posted ${successCount}/${carsToPost.length} cars to Discord`);
     } else {
-      console.log(`   ✅ No cars within budget to post for this search!`);
+      console.log(`   ✅ No cars passed all filters to post for this search!`);
     }
     
     return {
       totalFound: allCars.length,
       newCars: newCars.length,
       posted: successCount,
-      overBudget: overBudgetCars.length
+      overBudget: filteredCars.length
     };
     
   } catch (error) {
